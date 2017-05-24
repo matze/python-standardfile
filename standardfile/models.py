@@ -60,7 +60,6 @@ class Note(EncryptedItem):
 class Tag(EncryptedItem):
     def __init__(self, data, master_key):
         super(Tag, self).__init__(data, master_key)
-        print self.content
 
 
 def make(data, master_key):
