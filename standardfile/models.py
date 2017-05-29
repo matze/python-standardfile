@@ -1,17 +1,18 @@
 import base64
 import hmac
 import hashlib
+import json
+import binascii
 from client import AuthenticationError
 from Crypto.Cipher import AES
-from binascii import hexlify, unhexlify
 
 
 def decrypt_001(data, master_key):
     enc_item_key = base64.b64decode(data['enc_item_key'])
     iv = '\0'*16
-    aes = AES.new(unhexlify(master_key), AES.MODE_CBC, iv)
+    aes = AES.new(binascii.unhexlify(master_key), AES.MODE_CBC, iv)
     item_key = aes.decrypt(enc_item_key)
-    item_key = unhexlify(item_key[:-16])
+    item_key = binascii.unhexlify(item_key[:-16])
 
     enc_key = item_key[:len(item_key) / 2]
     auth_key = item_key[len(item_key) / 2:]
@@ -36,13 +37,26 @@ def decrypt(data, master_key):
 
 class Item(object):
     def __init__(self, data):
-        self.uuid = data['uuid']
-        self.created = data['created_at']
-        self.updated = data['updated_at']
-        self.content_type = data['content_type']
+        self.data = data
 
     def __repr__(self):
         return "<Item:type={}, created={}, updated={}>".format(self.content_type, self.created, self.updated)
+
+    @property
+    def uuid(self):
+        return self.data['uuid']
+
+    @property
+    def created(self):
+        return self.data['created_at']
+
+    @property
+    def updated(self):
+        return self.data['updated_at']
+
+    @property
+    def content_type(self):
+        return self.data['content_type']
 
 
 class EncryptedItem(Item):
@@ -50,10 +64,18 @@ class EncryptedItem(Item):
         super(EncryptedItem, self).__init__(data)
         self.content = decrypt(data, master_key)
 
+    @property
+    def title(self):
+        return self.content['title']
+
 
 class Note(EncryptedItem):
     def __init__(self, data, master_key):
         super(Note, self).__init__(data, master_key)
+
+    @property
+    def text(self):
+        return self.content['text']
 
 
 class Tag(EncryptedItem):
