@@ -8,13 +8,12 @@ from binascii import hexlify, unhexlify
 
 def decrypt_001(data, master_key):
     enc_item_key = base64.b64decode(data['enc_item_key'])
-    iv = enc_item_key[:16]
+    iv = '\0'*16
     aes = AES.new(unhexlify(master_key), AES.MODE_CBC, iv)
-    item_key = aes.decrypt(enc_item_key)        # 144 bytes hex encoded data result
-    item_key = item_key[16:-ord(item_key[-1])]  # 112 bytes hex encoded data remain (without IV and padding)
+    item_key = aes.decrypt(enc_item_key)
+    item_key = unhexlify(item_key[:-16])
 
-    item_key = '\0'*8 + unhexlify(item_key)
-    enc_key = item_key[8:len(item_key) / 2 + 8]
+    enc_key = item_key[:len(item_key) / 2]
     auth_key = item_key[len(item_key) / 2:]
 
     hmac_sha256 = hmac.new(auth_key, data['content'], hashlib.sha256)
@@ -23,9 +22,9 @@ def decrypt_001(data, master_key):
         raise AuthenticationError("Could not verify authentication hash")
 
     content = base64.b64decode(data['content'][3:])
-    iv = content[:16]
     aes = AES.new(enc_key, AES.MODE_CBC, iv)
-    return aes.decrypt(content)
+    content = aes.decrypt(content)
+    return json.loads(content[:-ord(content[-1])])
 
 
 def decrypt(data, master_key):
