@@ -91,6 +91,27 @@ def load(data, master_key):
     return Item(data['uuid'], 'Note', created_at, updated_at, data['content'])
 
 
+def encrypt_001(item, master_key):
+    """Returns a tuple (enc_content, enc_item_key, auth_hash)"""
+    content = json.dumps(item.content)
+    length = 16 - (len(content) % 16)
+    content += chr(length)*length
+
+    item_key = os.urandom(64)
+    enc_key = item_key[:32]
+    auth_key = item_key[32:]
+    iv = '\0'*16
+    aes = AES.new(enc_key, AES.MODE_CBC, iv)
+    enc_content = "001" + base64.b64encode(aes.encrypt(content))
+    auth_hash = hmac.new(auth_key, enc_content, hashlib.sha256).hexdigest()
+
+    aes = AES.new(binascii.unhexlify(master_key), AES.MODE_CBC, iv)
+
+    # add unnecessary 16-byte padding because CryptoJS is an asshole
+    enc_item_key = base64.b64encode(aes.encrypt(binascii.hexlify(item_key) + chr(16)*16))
+    return enc_content, enc_item_key, auth_hash
+
+
 def encrypt_002(item, master_key):
     """Returns a tuple (enc_content, enc_item_key)"""
     def encrypt(s, enc_key, auth_key):
@@ -119,17 +140,21 @@ def encrypt_002(item, master_key):
 
 
 def dump(item, master_key):
-    fmt = "%Y-%m-%dT%H:%M:%S.%fZ"
-    content, enc_item_key = encrypt_002(item, master_key)
+    def normalize(s):
+        return s[:-3] + 'Z'
+
+    fmt = "%Y-%m-%dT%H:%M:%S.%f"
+    content, enc_item_key, auth_hash = encrypt_001(item, master_key)
 
     data = dict(
         uuid=item.uuid,
-        created_at=datetime.datetime.strftime(item.created_at, fmt),
-        updated_at=datetime.datetime.strftime(item.updated_at, fmt),
+        created_at=normalize(datetime.datetime.strftime(item.created_at, fmt)),
+        updated_at=normalize(datetime.datetime.strftime(item.updated_at, fmt)),
         content_type=item.content_type,
         deleted=item.deleted,
         content=content,
         enc_item_key=enc_item_key,
+        auth_hash=auth_hash,
     )
 
     return data
