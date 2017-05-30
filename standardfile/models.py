@@ -1,10 +1,47 @@
+import os
 import base64
 import hmac
 import hashlib
 import json
 import binascii
+import datetime
 from client import AuthenticationError
 from Crypto.Cipher import AES
+
+
+class Item(object):
+    def __init__(self, uuid, content_type, created_at, updated_at, content, deleted=False):
+        self.uuid = uuid
+        self.content_type = content_type
+        self.created_at = created_at
+        self.updated_at = updated_at
+        self.content = content
+        self.deleted = deleted
+
+    def __repr__(self):
+        return "<Item:type={}>".format(self.content_type)
+
+
+class Note(Item):
+    def __init__(self, uuid, content_type, created_at, updated_at, content):
+        super(Note, self).__init__(uuid, content_type, created_at, updated_at, content)
+
+    @property
+    def title(self):
+        return self.content['title']
+
+    @property
+    def text(self):
+        return self.content['text']
+
+
+class Tag(Item):
+    def __init__(self,  uuid, content_type, created_at, updated_at, content):
+        super(Tag, self).__init__(uuid, content_type, created_at, updated_at, content)
+
+    @property
+    def title(self):
+        return self.content['title']
 
 
 def decrypt_001(data, master_key):
@@ -35,62 +72,64 @@ def decrypt(data, master_key):
     raise RuntimeError("002 not supported yet")
 
 
-class Item(object):
-    def __init__(self, data):
-        self.data = data
+def load(data, master_key):
+    fmt = "%Y-%m-%dT%H:%M:%S.%fZ"
+    created_at = datetime.datetime.strptime(data['created_at'], fmt)
+    updated_at = datetime.datetime.strptime(data['updated_at'], fmt)
 
-    def __repr__(self):
-        return "<Item:type={}, created={}, updated={}>".format(self.content_type, self.created, self.updated)
-
-    @property
-    def uuid(self):
-        return self.data['uuid']
-
-    @property
-    def created(self):
-        return self.data['created_at']
-
-    @property
-    def updated(self):
-        return self.data['updated_at']
-
-    @property
-    def content_type(self):
-        return self.data['content_type']
-
-
-class EncryptedItem(Item):
-    def __init__(self, data, master_key):
-        super(EncryptedItem, self).__init__(data)
-        self.content = decrypt(data, master_key)
-
-    @property
-    def title(self):
-        return self.content['title']
-
-
-class Note(EncryptedItem):
-    def __init__(self, data, master_key):
-        super(Note, self).__init__(data, master_key)
-
-    @property
-    def text(self):
-        return self.content['text']
-
-
-class Tag(EncryptedItem):
-    def __init__(self, data, master_key):
-        super(Tag, self).__init__(data, master_key)
-
-
-def make(data, master_key):
     if 'deleted' in data and data['deleted']:
-        return Item(data)
+        return Item(data['uuid'], 'Note', created_at, updated_at, data['content'], True)
 
     if data['content_type'] == 'Note':
-        return Note(data, master_key)
+        content = decrypt(data, master_key)
+        return Note(data['uuid'], 'Note', created_at, updated_at, content)
 
     if data['content_type'] == 'Tag':
-        return Tag(data, master_key)
+        content = decrypt(data, master_key)
+        return Note(data['uuid'], 'Tag', created_at, updated_at, content)
 
-    return Item(data)
+    return Item(data['uuid'], 'Note', created_at, updated_at, data['content'])
+
+
+def encrypt_002(item, master_key):
+    """Returns a tuple (enc_content, enc_item_key)"""
+    def encrypt(s, enc_key, auth_key):
+        length = 16 - (len(s) % 16)
+        s += chr(length)*length
+
+        iv = os.urandom(16)
+        aes = AES.new(enc_key, AES.MODE_CBC, iv)
+        encrypted = base64.b64encode(aes.encrypt(s))
+
+        iv = binascii.hexlify(iv)
+        auth_hash = hmac.new(auth_key, ":".join(["002", iv, encrypted])).hexdigest()
+        return ":".join(["002", auth_hash, iv, encrypted])
+
+    item_key = os.urandom(64)
+    enc_key = item_key[:32]
+    auth_key = item_key[32:]
+
+    enc_content = encrypt(json.dumps(item.content), enc_key, auth_key)
+
+    global_enc_key = hmac.new(master_key, 'e', hashlib.sha256).digest()
+    global_auth_key = hmac.new(master_key, 'a', hashlib.sha256).digest()
+    enc_item_key = encrypt(binascii.hexlify(item_key), global_enc_key, global_auth_key)
+
+    return enc_content, enc_item_key
+
+
+def dump(item, master_key):
+    fmt = "%Y-%m-%dT%H:%M:%S.%fZ"
+    content, enc_item_key = encrypt_002(item, master_key)
+
+    data = dict(
+        uuid=item.uuid,
+        created_at=datetime.datetime.strftime(item.created_at, fmt),
+        updated_at=datetime.datetime.strftime(item.updated_at, fmt),
+        content_type=item.content_type,
+        deleted=item.deleted,
+        content=content,
+        enc_item_key=enc_item_key,
+    )
+
+    return data

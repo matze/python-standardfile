@@ -6,8 +6,9 @@ import standardfile.models
 def local(args):
     dump = json.load(open(args.file))
 
-    for serialized in dump['items']:
-        print("{}".format(standardfile.models.make(serialized, args.key)))
+    for serialized in dump['items'][:2]:
+        item = standardfile.models.load(serialized, args.key)
+        print("{}".format(standardfile.models.load(serialized, args.key)))
 
 
 def remote(args):
