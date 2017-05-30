@@ -1,9 +1,9 @@
 import requests
 import base64
+import binascii
 import standardfile.models
 from passlib.hash import pbkdf2_sha512
 from requests.compat import urljoin
-from binascii import hexlify, unhexlify
 
 
 class AuthenticationError(Exception):
@@ -13,7 +13,7 @@ class AuthenticationError(Exception):
 class Client(object):
     def __init__(self, email, password, host='https://sync.standardnotes.org'):
         self.host = host
-        self.token = self.sign_in(email, password)
+        self.token = self.sign_in(email, password)['token']
         self.sync_token = None
 
     def url(self, relative):
@@ -25,7 +25,7 @@ class Client(object):
         hash_params = dict(salt=bytes(params['pw_salt']), rounds=params['pw_cost'])
         hashed = pbkdf2_sha512.hash(password, **hash_params)
         hashed = hashed[hashed.rfind('$') + 1:].replace('.', '+') + '=='
-        decoded = hexlify(base64.b64decode(hashed))
+        decoded = binascii.hexlify(base64.b64decode(hashed))
 
         password = decoded[:len(decoded) / 2]
         self.master = decoded[len(decoded) / 2:]
@@ -38,7 +38,7 @@ class Client(object):
 
     def get(self):
         params = {'items': [], 'limit': 50}
-        headers = {'Authorization': 'Bearer {}'.format(self.token['token'])}
+        headers = {'Authorization': 'Bearer {}'.format(self.token)}
         response = requests.post(self.url('items/sync'), headers=headers, json=params)
         data = response.json()
         return [standardfile.models.make(d, self.master) for d in data['retrieved_items']]
