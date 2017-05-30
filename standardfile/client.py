@@ -14,6 +14,7 @@ class Client(object):
     def __init__(self, email, password, host='https://sync.standardnotes.org'):
         self.host = host
         self.token = self.sign_in(email, password)['token']
+        self.headers = {'Authorization': 'Bearer {}'.format(self.token)}
         self.sync_token = None
 
     def url(self, relative):
@@ -37,8 +38,12 @@ class Client(object):
         return resp.json()
 
     def get(self):
-        params = {'items': [], 'limit': 50}
-        headers = {'Authorization': 'Bearer {}'.format(self.token)}
-        response = requests.post(self.url('items/sync'), headers=headers, json=params)
+        params = {'items': []}
+        response = requests.post(self.url('items/sync'), headers=self.headers, json=params)
         data = response.json()
-        return [standardfile.models.make(d, self.master) for d in data['retrieved_items']]
+        return [standardfile.models.load(d, self.master) for d in data['retrieved_items']]
+
+    def post(self, items):
+        params = {'items': [standardfile.models.dump(x, self.master) for x in items], 'sync_token': ''}
+        response = requests.post(self.url('items/sync'), headers=self.headers, json=params)
+        data = response.json()
