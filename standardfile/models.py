@@ -5,16 +5,17 @@ import hashlib
 import json
 import binascii
 import datetime
+import uuid as uuid_module
 from client import AuthenticationError
 from Crypto.Cipher import AES
 
 
 class Item(object):
     def __init__(self, uuid, content_type, created_at, updated_at, content, deleted=False):
-        self.uuid = uuid
+        self.uuid = uuid or str(uuid_module.uuid4())
         self.content_type = content_type
-        self.created_at = created_at
-        self.updated_at = updated_at
+        self.created_at = created_at or datetime.datetime.now()
+        self.updated_at = updated_at or datetime.datetime.now()
         self.content = content
         self.deleted = deleted
 
@@ -23,25 +24,48 @@ class Item(object):
 
 
 class Note(Item):
-    def __init__(self, uuid, content_type, created_at, updated_at, content):
+    def __init__(self, uuid=None, content_type='Note', created_at=None, updated_at=None,
+                 content=dict(references=[]), title=None, text=None):
         super(Note, self).__init__(uuid, content_type, created_at, updated_at, content)
+
+        if title:
+            self.title = title
+
+        if text:
+            self.text = text
 
     @property
     def title(self):
         return self.content['title']
+
+    @title.setter
+    def title(self, t):
+        self.content['title'] = t
 
     @property
     def text(self):
         return self.content['text']
 
+    @text.setter
+    def text(self, t):
+        self.content['text'] = t
+
 
 class Tag(Item):
-    def __init__(self,  uuid, content_type, created_at, updated_at, content):
+    def __init__(self, uuid=None, content_type='Tag', created_at=None, updated_at=None,
+                 content=dict(references=[]), title=None):
         super(Tag, self).__init__(uuid, content_type, created_at, updated_at, content)
+
+        if title:
+            self.title = title
 
     @property
     def title(self):
         return self.content['title']
+
+    @title.setter
+    def title(self, t):
+        self.content['title'] = t
 
 
 def decrypt_001(data, master_key):
