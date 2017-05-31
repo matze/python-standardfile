@@ -21,6 +21,12 @@ def remote(args):
             print("{}".format(item))
 
 
+def add_note(args):
+    note = standardfile.models.Note(title=args.title, text=args.text)
+    client = standardfile.client.Client(args.email, args.password)
+    client.post([note])
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
@@ -36,6 +42,14 @@ if __name__ == '__main__':
     remote_parser.add_argument('--email', metavar='ADDR', type=str, required=True)
     remote_parser.add_argument('--password', metavar='PASS', type=str, required=True)
     remote_parser.add_argument('--show-master-key', action='store_true', default=False)
+
+    add_parser = cmd_parser.add_parser('add', help="Add a note")
+    add_parser.set_defaults(run=add_note)
+    add_parser.add_argument('--email', metavar='ADDR', type=str, required=True)
+    add_parser.add_argument('--password', metavar='PASS', type=str, required=True)
+    add_parser.add_argument('--title', type=str, required=True)
+    add_parser.add_argument('--text', type=str, required=True)
+    add_parser.add_argument('--key', metavar='MASTER', type=str, required=True)
 
     args = parser.parse_args()
     args.run(args)
