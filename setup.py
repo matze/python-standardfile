@@ -10,8 +10,12 @@ setup(
     url='http://github.com/matze/python-standardfile',
     license='LGPL',
     packages=find_packages(),
-    scripts=['bin/sf-test'],
+    scripts=[
+        'bin/sf-test',
+        'bin/sf-mount',
+    ],
     install_requires=[
+        'fusepy',
         'passlib',
         'pycrypto',
         'requests',
