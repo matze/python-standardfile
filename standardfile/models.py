@@ -44,7 +44,7 @@ class Note(Item):
 
     @property
     def text(self):
-        return self.content['text']
+        return self.content.get('text', '')
 
     @text.setter
     def text(self, t):
