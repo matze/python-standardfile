@@ -22,11 +22,15 @@ class Item(object):
     def __repr__(self):
         return "<Item:type={}>".format(self.content_type)
 
+    @property
+    def references(self):
+        return self.content['references']
+
 
 class Note(Item):
-    def __init__(self, uuid=None, content_type='Note', created_at=None, updated_at=None,
+    def __init__(self, uuid=None, created_at=None, updated_at=None,
                  content=dict(references=[]), title=None, text=None):
-        super(Note, self).__init__(uuid, content_type, created_at, updated_at, content)
+        super(Note, self).__init__(uuid, 'Note', created_at, updated_at, content)
 
         if title:
             self.title = title
@@ -36,7 +40,7 @@ class Note(Item):
 
     @property
     def title(self):
-        return self.content['title']
+        return self.content['title'].encode('utf-8')
 
     @title.setter
     def title(self, t):
@@ -52,20 +56,30 @@ class Note(Item):
 
 
 class Tag(Item):
-    def __init__(self, uuid=None, content_type='Tag', created_at=None, updated_at=None,
+    def __init__(self, uuid=None, created_at=None, updated_at=None,
                  content=dict(references=[]), title=None):
-        super(Tag, self).__init__(uuid, content_type, created_at, updated_at, content)
+        super(Tag, self).__init__(uuid, 'Tag', created_at, updated_at, content)
 
         if title:
             self.title = title
 
     @property
     def title(self):
-        return self.content['title']
+        return self.content['title'].encode('utf-8')
 
     @title.setter
     def title(self, t):
         self.content['title'] = t
+
+
+class Collection(object):
+    def __init__(self, items):
+        self.items = {x.uuid: x for x in items}
+        self.notes = [x for x in items if isinstance(x, Note)]
+        self.tags = [x for x in items if isinstance(x, Tag)]
+
+    def refs_for(self, item):
+        return [self.items[ref['uuid']] for ref in item.references]
 
 
 def decrypt_001(data, master_key):
@@ -106,11 +120,11 @@ def load(data, master_key):
 
     if data['content_type'] == 'Note':
         content = decrypt(data, master_key)
-        return Note(data['uuid'], 'Note', created_at, updated_at, content)
+        return Note(data['uuid'], created_at, updated_at, content)
 
     if data['content_type'] == 'Tag':
         content = decrypt(data, master_key)
-        return Note(data['uuid'], 'Tag', created_at, updated_at, content)
+        return Tag(data['uuid'], created_at, updated_at, content)
 
     return Item(data['uuid'], 'Note', created_at, updated_at, data['content'])
 
