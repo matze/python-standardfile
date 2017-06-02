@@ -15,55 +15,60 @@ from errno import ENOENT
 EPOCH = datetime.datetime(1970, 1, 1)
 
 
+def sanitize(s):
+    def legal(c):
+        return c.isalpha() or c.isdigit() or c == ' ' or c == '.'
+
+    return "".join([c for c in s if legal(c)]).rstrip()
+
+
+def get_path_elements(path):
+    return [x for x in path.split('/') if x]
+
+
 class StandardFile(LoggingMixIn, Operations):
     def __init__(self, key):
-        def legal(c):
-            return c.isalpha() or c.isdigit() or c == ' ' or c == '.'
-
-        def sanitize(s):
-            return "".join([c for c in s if legal(c)]).rstrip()
 
         data = json.load(open('dump.json'))
-        items = [sfm.load(x, key) for x in data['items']]
-        self.notes = {sanitize(x.title) + '.md': x for x in items if isinstance(x, sfm.Note)}
-        self.tags = {sanitize(x.title): x for x in items if isinstance(x, sfm.Tag)}
+        self.collection = sfm.Collection([sfm.load(x, key) for x in data['items']])
         self.fds = {}
         self.attrs = {}
         self.uid = os.getuid()
         self.gid = os.getgid()
 
-    def get_note(self, path):
-        name = unicode(os.path.basename(path))
+    def get_note(self, name):
+        matches = [x for x in self.collection.notes if sanitize(x.title) == name]
 
-        if not name in self.notes:
+        if not matches:
             raise FuseOSError(ENOENT)
 
-        return self.notes[name]
+        return matches[0]
 
     def readdir(self, path, fh):
         if path == '/':
-            return ['.', '..', 'tags', 'notes']
-        elif path == '/notes':
-            return ['.', '..'] + self.notes.keys()
-        elif path == '/tags':
-            return ['.', '..'] + self.tags.keys()
+            return ['.', '..'] + [t.title for t in self.collection.tags]
+
+        tag = self.collection.tag_matching(path[1:])
+        return ['.', '..'] + [sanitize(n.title) for n in self.collection.refs_for(tag)]
 
     def getattr(self, path, fh=None):
-        if path.startswith('/notes/'):
-            note = self.get_note(path)
-            mode = stat.S_IFREG | 0o600
-            mtime = atime = (note.updated_at - EPOCH).total_seconds()
-            ctime = (note.created_at - EPOCH).total_seconds()
-            size = len(note.text)
-            return dict(st_mode=mode, st_ctime=ctime, st_mtime=mtime,
-                        st_atime=atime, st_nlink=2, st_size=size,
-                        st_uid=self.uid, st_gid=self.gid)
-        else:
+        elements = get_path_elements(path)
+
+        if len(elements) <= 1:
             now = time.time()
             mode = stat.S_IFDIR | 0o700
             return dict(st_mode=mode, st_ctime=now, st_mtime=now,
                         st_atime=now, st_nlink=2,
                         st_uid=self.uid, st_gid=self.gid)
+        else:
+            note = self.get_note(elements[1])
+            mode = stat.S_IFREG | 0o600
+            mtime = atime = (note.updated_at - EPOCH).total_seconds()
+            ctime = (note.created_at - EPOCH).total_seconds()
+            size = len(note.text)
+            return dict(st_mode=mode, st_ctime=ctime, st_mtime=mtime,
+                    st_atime=atime, st_nlink=2, st_size=size,
+                    st_uid=self.uid, st_gid=self.gid)
 
     def getxattr(self, path, name, position=0):
         attrs = self.attrs.get(path, {})
@@ -80,7 +85,8 @@ class StandardFile(LoggingMixIn, Operations):
     def open(self, path, flags):
         fds = self.fds.keys()
         fd = 0 if not fds else max(fds) + 1
-        self.fds[fd] = self.get_note(path)
+        elements = get_path_elements(path)
+        self.fds[fd] = self.get_note(elements[1])
         return fd
 
     def read(self, path, size, offset, fd):

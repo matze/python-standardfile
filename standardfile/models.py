@@ -81,6 +81,10 @@ class Collection(object):
     def refs_for(self, item):
         return [self.items[ref['uuid']] for ref in item.references]
 
+    def tag_matching(self, name):
+        matches = [x for x in self.tags if x.title == name]
+        return matches[0] if matches else None
+
 
 def decrypt_001(data, master_key):
     enc_item_key = base64.b64decode(data['enc_item_key'])
