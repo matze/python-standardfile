@@ -40,7 +40,7 @@ class Client(object):
         params = {'items': []}
         response = requests.post(self.url('items/sync'), headers=self.headers, json=params)
         data = response.json()
-        return [standardfile.models.load(d, self.master_key) for d in data['retrieved_items']]
+        return [standardfile.models.load(d, self.master_key, self.auth_key) for d in data['retrieved_items']]
 
     def post(self, items):
         params = {'items': [standardfile.models.dump(x, self.master_key) for x in items], 'sync_token': ''}
