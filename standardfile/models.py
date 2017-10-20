@@ -54,6 +54,9 @@ class Note(Item):
     def text(self, t):
         self.content['text'] = t
 
+    def __repr__(self):
+        return "<Note:title={}>".format(self.title)
+
 
 class Tag(Item):
     def __init__(self, uuid=None, created_at=None, updated_at=None,
