@@ -2,7 +2,7 @@ import requests
 import base64
 import binascii
 import standardfile.models
-from passlib.hash import pbkdf2_sha512
+import hashlib
 from requests.compat import urljoin
 
 
@@ -22,14 +22,13 @@ class Client(object):
 
     def sign_in(self, email, password):
         params = requests.get(self.url('auth/params'), params=dict(email=email)).json()
+        hashed = hashlib.pbkdf2_hmac('sha512', password, params['pw_salt'], params['pw_cost'], dklen=768/8)
+        decoded = binascii.hexlify(hashed)
 
-        hash_params = dict(salt=bytes(params['pw_salt']), rounds=params['pw_cost'])
-        hashed = pbkdf2_sha512.hash(password, **hash_params)
-        hashed = hashed[hashed.rfind('$') + 1:].replace('.', '+') + '=='
-        decoded = binascii.hexlify(base64.b64decode(hashed))
-
-        password = decoded[:len(decoded) / 2]
-        self.master = decoded[len(decoded) / 2:]
+        length = len(decoded) / 3
+        password = decoded[:length]
+        self.master_key = decoded[length:2*length]
+        self.auth_key = decoded[2*length:]
         resp = requests.post(self.url('auth/sign_in'), data=dict(email=email, password=password))
 
         if resp.status_code >= 400:
@@ -41,9 +40,9 @@ class Client(object):
         params = {'items': []}
         response = requests.post(self.url('items/sync'), headers=self.headers, json=params)
         data = response.json()
-        return [standardfile.models.load(d, self.master) for d in data['retrieved_items']]
+        return [standardfile.models.load(d, self.master_key) for d in data['retrieved_items']]
 
     def post(self, items):
-        params = {'items': [standardfile.models.dump(x, self.master) for x in items], 'sync_token': ''}
+        params = {'items': [standardfile.models.dump(x, self.master_key) for x in items], 'sync_token': ''}
         response = requests.post(self.url('items/sync'), headers=self.headers, json=params)
         data = response.json()

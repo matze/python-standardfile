@@ -1,8 +1,5 @@
 ## Standard File Python client
 
-*Warning*: the decryption is incomplete and is only able to verify that data has
-not been tempered with. Actual content decryption is not yet possible.
-
 To test the correctness you can decrypt your remote data with
 
     python test.py remote --email foo@bar.com --password xyz 

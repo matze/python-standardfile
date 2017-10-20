@@ -3,9 +3,9 @@ import base64
 import hmac
 import hashlib
 import json
-import binascii
 import datetime
 import uuid as uuid_module
+from binascii import unhexlify, hexlify
 from client import AuthenticationError
 from Crypto.Cipher import AES
 
@@ -86,12 +86,12 @@ class Collection(object):
         return matches[0] if matches else None
 
 
-def decrypt_001(data, master_key):
+def decrypt_001(data, master_key, auth_key):
     enc_item_key = base64.b64decode(data['enc_item_key'])
     iv = '\0'*16
-    aes = AES.new(binascii.unhexlify(master_key), AES.MODE_CBC, iv)
+    aes = AES.new(unhexlify(master_key), AES.MODE_CBC, iv)
     item_key = aes.decrypt(enc_item_key)
-    item_key = binascii.unhexlify(item_key[:-16])
+    item_key = unhexlify(item_key[:-16])
 
     enc_key = item_key[:len(item_key) / 2]
     auth_key = item_key[len(item_key) / 2:]
@@ -107,14 +107,44 @@ def decrypt_001(data, master_key):
     return json.loads(content[:-ord(content[-1])])
 
 
-def decrypt(data, master_key):
-    if data['content'][:3] == '001':
-        return decrypt_001(data, master_key)
+def decrypt_002(data, master_key, auth_key):
+    def decrypt_string(s, enc_key, auth_key, check_uuid):
+        version, auth_hash, uuid, iv, cipher_text = s.split(':')
 
-    raise RuntimeError("002 not supported yet")
+        if uuid != check_uuid:
+            raise AuthenticationError("uuid is wrong")
+
+        string_to_auth = ':'.join((version, uuid, iv, cipher_text))
+        hmac_sha256 = hmac.new(auth_key, string_to_auth, hashlib.sha256)
+
+        if hmac_sha256.hexdigest() != auth_hash:
+            raise AuthenticationError("Could not verify authentication hash")
+
+        aes = AES.new(enc_key, AES.MODE_CBC, unhexlify(iv))
+        result = aes.decrypt(base64.b64decode(cipher_text))
+        return result[:-ord(result[-1])]
+
+    uuid = data['uuid']
+    item_key = decrypt_string(data['enc_item_key'], unhexlify(master_key), unhexlify(auth_key), uuid)
+    item_enc_key = item_key[:len(item_key) / 2]
+    item_auth_key = item_key[len(item_key) / 2:]
+    content = decrypt_string(data['content'], unhexlify(item_enc_key), unhexlify(item_auth_key), uuid)
+    return json.loads(content)
 
 
-def load(data, master_key):
+def decrypt(data, master_key, auth_key):
+    prefix = data['content'][:3]
+
+    if prefix == '001':
+        return decrypt_001(data, master_key, auth_key)
+
+    if prefix == '002':
+        return decrypt_002(data, master_key, auth_key)
+
+    raise RuntimeError("Unknown encryption scheme")
+
+
+def load(data, master_key, auth_key):
     fmt = "%Y-%m-%dT%H:%M:%S.%fZ"
     created_at = datetime.datetime.strptime(data['created_at'], fmt)
     updated_at = datetime.datetime.strptime(data['updated_at'], fmt)
@@ -123,11 +153,11 @@ def load(data, master_key):
         return Item(data['uuid'], 'Note', created_at, updated_at, data['content'], True)
 
     if data['content_type'] == 'Note':
-        content = decrypt(data, master_key)
+        content = decrypt(data, master_key, auth_key)
         return Note(data['uuid'], created_at, updated_at, content)
 
     if data['content_type'] == 'Tag':
-        content = decrypt(data, master_key)
+        content = decrypt(data, master_key, auth_key)
         return Tag(data['uuid'], created_at, updated_at, content)
 
     return Item(data['uuid'], 'Note', created_at, updated_at, data['content'])
@@ -147,10 +177,10 @@ def encrypt_001(item, master_key):
     enc_content = "001" + base64.b64encode(aes.encrypt(content))
     auth_hash = hmac.new(auth_key, enc_content, hashlib.sha256).hexdigest()
 
-    aes = AES.new(binascii.unhexlify(master_key), AES.MODE_CBC, iv)
+    aes = AES.new(unhexlify(master_key), AES.MODE_CBC, iv)
 
     # add unnecessary 16-byte padding because CryptoJS is an asshole
-    enc_item_key = base64.b64encode(aes.encrypt(binascii.hexlify(item_key) + chr(16)*16))
+    enc_item_key = base64.b64encode(aes.encrypt(hexlify(item_key) + chr(16)*16))
     return enc_content, enc_item_key, auth_hash
 
 
@@ -164,7 +194,7 @@ def encrypt_002(item, master_key):
         aes = AES.new(enc_key, AES.MODE_CBC, iv)
         encrypted = base64.b64encode(aes.encrypt(s))
 
-        iv = binascii.hexlify(iv)
+        iv = hexlify(iv)
         auth_hash = hmac.new(auth_key, ":".join(["002", iv, encrypted])).hexdigest()
         return ":".join(["002", auth_hash, iv, encrypted])
 
@@ -176,7 +206,7 @@ def encrypt_002(item, master_key):
 
     global_enc_key = hmac.new(master_key, 'e', hashlib.sha256).digest()
     global_auth_key = hmac.new(master_key, 'a', hashlib.sha256).digest()
-    enc_item_key = encrypt(binascii.hexlify(item_key), global_enc_key, global_auth_key)
+    enc_item_key = encrypt(hexlify(item_key), global_enc_key, global_auth_key)
 
     return enc_content, enc_item_key
 

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 import json
 import argparse
@@ -9,16 +9,20 @@ def local(args):
     dump = json.load(open(args.file))
 
     for serialized in dump['items']:
-        item = standardfile.models.load(serialized, args.key)
-        print("{}".format(standardfile.models.load(serialized, args.key)))
+        item = standardfile.models.load(serialized, args.master_key, args.auth_key)
+        print("{}".format(item))
 
 
 def remote(args):
     client = standardfile.client.Client(args.email, args.password)
 
     if args.show_master_key:
-        print("{}".format(client.master))
-    else:
+        print("{}".format(client.master_key))
+
+    if args.show_auth_key:
+        print("{}".format(client.auth_key))
+
+    if not args.show_master_key and not args.show_auth_key:
         for item in client.get():
             print("{}".format(item))
 
@@ -37,13 +41,15 @@ if __name__ == '__main__':
     local_parser = cmd_parser.add_parser('local', help="Decrypt local data")
     local_parser.set_defaults(run=local)
     local_parser.add_argument('--file', metavar='FILE.JSON', type=str, required=True)
-    local_parser.add_argument('--key', metavar='MASTER', type=str, required=True)
+    local_parser.add_argument('--master-key', metavar='MASTER', type=str, required=True)
+    local_parser.add_argument('--auth-key', metavar='AUTH', type=str, required=True)
 
     remote_parser = cmd_parser.add_parser('remote', help="Decrypt remote data")
     remote_parser.set_defaults(run=remote)
     remote_parser.add_argument('--email', metavar='ADDR', type=str, required=True)
     remote_parser.add_argument('--password', metavar='PASS', type=str, required=True)
     remote_parser.add_argument('--show-master-key', action='store_true', default=False)
+    remote_parser.add_argument('--show-auth-key', action='store_true', default=False)
 
     add_parser = cmd_parser.add_parser('add', help="Add a note")
     add_parser.set_defaults(run=add_note)
